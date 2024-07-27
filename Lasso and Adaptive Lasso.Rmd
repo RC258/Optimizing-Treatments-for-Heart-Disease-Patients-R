@@ -1,0 +1,373 @@
+---
+title: "Lasso and Adaptive Lasso"
+author: "Yining Zhou"
+date: "2024-04-02"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(ggplot2)
+library(gridExtra)
+library(car)
+library(glmnet)
+library(bestglm)
+```
+
+
+
+```{r}
+data = read.csv("heart1.csv",header=TRUE)
+data = na.omit(data) ## No NA value exist
+head(data)
+data$sex = as.factor(data$sex)
+
+```
+
+
+```{r}
+ggplot(data, aes(x = factor(cp), y = thalach)) +
+  geom_boxplot() +
+  labs(x = "cp", y = "thalach")
+```
+
+#### Data visulization
+```{r}
+plot1 <- ggplot(data, aes(x = factor(target), y = age)) +
+  geom_boxplot() +
+  labs(x = "Target", y = "Age")
+
+plot2 <- ggplot(data, aes(x = factor(target), y = trestbps)) +
+  geom_boxplot() +
+  labs(x = "Target", y = "trestbps")
+
+plot3 <- ggplot(data, aes(x = factor(target), y = chol)) +
+  geom_boxplot() +
+  labs(x = "Target", y = "chol")
+
+plot4 <- ggplot(data, aes(x = factor(target), y = thalach)) +
+  geom_boxplot() +
+  labs(x = "Target", y = "thalach")
+
+plot5 <- ggplot(data, aes(x = factor(target), y = oldpeak)) +
+  geom_boxplot() +
+  labs(x = "Target", y = "oldpeak")
+
+grid.arrange(plot1, plot2, plot3, plot4, plot5, ncol = 3, heights = c(3, 3), widths = c(1, 1, 1))
+
+```
+
+
+
+
+```{r}
+plot6 <- ggplot(data, aes(x = age, y = thalach, col = sex)) +
+  geom_jitter() +
+  theme_minimal() +
+  labs(x = "Age", y = "thalach")
+
+plot7 <- ggplot(data, aes(x = trestbps, y = thalach, col = sex)) +
+  geom_jitter() +
+  theme_minimal() +
+  labs(x = "Trestbps", y = "thalach")
+
+plot8 <- ggplot(data, aes(x = chol, y = thalach, col = sex)) +
+  geom_jitter() +
+  theme_minimal() +
+  labs(x = "Chol", y = "thalach")
+
+plot9 <- ggplot(data, aes(x = oldpeak, y = thalach, col = sex)) +
+  geom_jitter() +
+  theme_minimal() +
+  labs(x = "Oldpeak", y = "thalach")
+
+grid.arrange(plot6, plot7, plot8, plot9, ncol = 2)
+
+```
+
+
+## There exist several binary variables variables:
+
+#### Data clean
+```{r}
+num_variable <- data[, !names(data) %in% c("sex","fbs","restecg","exang","slope","ca", "thal", "target")]
+hist(data$thalach, breaks = "FD", col = "lightblue", main = "Histogram of thalach", xlab = "Thalach")
+```
+
+
+```{r}
+ggplot(data, aes(x = age, y = thalach, col = sex)) +
+  geom_jitter() +
+  theme_minimal() +
+  labs(x = "Age", y = "thalach")
+```
+
+
+#### Check cp's effect
+
+```{r}
+data1 <- data[data$target==1,]
+data2 <- data[data$target==0,]
+
+cp0 <- sum(data2$cp==0)
+cp1 <- sum(data2$cp==1)
+cp2 <- sum(data2$cp==2)
+cp3 <- sum(data2$cp==3)
+
+cp_counts <- data.frame(cp = c("cp0", "cp1", "cp2", "cp3"),
+                        count = c(cp0, cp1, cp2, cp3))
+
+
+p0 <- ggplot(cp_counts, aes(x = cp, y = count)) +
+  geom_bar(stat = "identity", fill = "skyblue", color = "black") +
+  labs(title = "Not Heart Disease cases",
+       x = "cp",
+       y = "Count") +
+  theme_minimal()
+
+data2 <- data[!data$target==0,]
+
+cp0 <- sum(data2$cp==0)
+cp1 <- sum(data2$cp==1)
+cp2 <- sum(data2$cp==2)
+cp3 <- sum(data2$cp==3)
+
+cp_counts <- data.frame(cp = c("cp0", "cp1", "cp2", "cp3"),
+                        count = c(cp0, cp1, cp2, cp3))
+
+
+p1 <- ggplot(cp_counts, aes(x = cp, y = count)) +
+  geom_bar(stat = "identity", fill = "skyblue", color = "black") +
+  labs(title = "Confirmed Heart Disease cases",
+       x = "cp",
+       y = "Count") +
+  theme_minimal()
+
+
+grid.arrange(p0, p1, ncol = 2)
+```
+
+#### Initial MLR
+
+```{r}
+full <- lm(thalach~age+cp+trestbps+chol+oldpeak, data = num_variable)
+model.empty <- lm(thalach ~ 1, data = data)
+vif(full)
+summary(full)
+
+if (summary(full)$coefficients["chol", "Pr(>|t|)"] > 0.05) {
+  cat("The variable 'chol' can be dropped from the model.")
+} else {
+  cat("The variable 'chol' should be retained in the model.")
+}
+```
+
+
+#### Bic
+```{r}
+bicXy =cbind(num_variable[1:4], num_variable[6],num_variable[5])
+model.bestglm.bic <- bestglm(bicXy, IC = 'BIC') #subset regression BIC
+model.bestglm.bic$BestModels
+
+```
+
+
+#### Numerical Variables Lasso
+
+```{r}
+cp_num_pred <- num_variable[, !colnames(num_variable) %in% "thalach"]
+```
+
+
+
+```{r}
+lambda.seq <- 10^seq(-5, 5, by = .1)
+
+cp_X <- data.matrix(cp_num_pred)
+
+cp_y <- data$thalach
+
+cp_cv.lasso <- cv.glmnet(cp_X, cp_y,
+    lambda = lambda.seq,
+    alpha = 1, #Lasso penalty
+    family = 'gaussian')
+
+coef(cp_cv.lasso)
+
+```
+
+
+
+```{r}
+Varcounts = list()
+
+for (i in 1:100) {
+    set.seed(NULL)
+    set.seed(i)
+    cp_cv.lasso <- cv.glmnet(cp_X, cp_y,
+    lambda = lambda.seq,
+    alpha = 1, #Lasso penalty
+    family = 'gaussian')
+
+    bestcoef = coef(cp_cv.lasso)[-1]
+    bestcoef <- bestcoef[bestcoef != 0]
+    
+    Varcounts[i] = length(bestcoef)
+    
+}
+
+Varcounts = as.numeric(Varcounts)
+summary(Varcounts)
+```
+
+
+
+#### Adaptive Lasso
+
+```{r}
+beta_hat <- as.numeric(full$coefficients[-1])
+gamma <- 1
+weight <- 1/(abs(beta_hat))^gamma
+
+ cv.adalasso <- cv.glmnet(cp_X, cp_y,
+    
+    lambda = lambda.seq,
+    
+    alpha = 1, 
+    
+    family = 'gaussian',
+    
+    penalty.factor = weight)
+
+    coef(cv.adalasso)
+
+```
+
+```{r}
+ada_Varcounts = list()
+
+for (i in 1:100) {
+    
+    set.seed(NULL)
+    
+    set.seed(i)
+    
+    cv.adalasso <- cv.glmnet(cp_X, cp_y,
+    
+    lambda = lambda.seq,
+    
+    alpha = 1, 
+    
+    family = 'gaussian',
+    
+    penalty.factor = weight)
+
+    bestcoef = coef(cv.adalasso)[-1]
+    
+    bestcoef <- bestcoef[bestcoef != 0]
+    
+    ada_Varcounts[i] = length(bestcoef)
+}
+
+ada_Varcounts = as.numeric(ada_Varcounts)
+summary(ada_Varcounts)
+```
+
+
+
+```{r}
+pred <- data[, !colnames(data) %in% c("thalach", "target")]
+```
+
+
+
+```{r}
+lambda.seq <- 10^seq(-5, 5, by = .1)
+
+cp_X <- data.matrix(pred)
+
+cp_y <- data$thalach
+
+pred_cv.lasso <- cv.glmnet(cp_X, cp_y,
+    lambda = lambda.seq,
+    alpha = 1, #Lasso penalty
+    family = 'gaussian')
+
+coef(pred_cv.lasso)
+
+```
+
+```{r}
+Varcounts = list()
+
+for (i in 1:100) {
+    set.seed(NULL)
+    set.seed(i)
+    pred_cv.lasso <- cv.glmnet(cp_X, cp_y,
+    lambda = lambda.seq,
+    alpha = 1, #Lasso penalty
+    family = 'gaussian')
+
+    bestcoef = coef(pred_cv.lasso)[-1]
+    bestcoef <- bestcoef[bestcoef != 0]
+    
+    Varcounts[i] = length(bestcoef)
+    
+}
+
+Varcounts = as.numeric(Varcounts)
+hist(Varcounts)
+
+```
+
+
+```{r}
+notarget_data = data[, !colnames(data) %in%  "target"] 
+
+
+notarget_model <- lm(thalach~., data = notarget_data)
+
+beta_hat <- as.numeric(notarget_model$coefficients[-1])
+
+gamma <- 1
+
+weight <- 1/(abs(beta_hat))^gamma
+
+
+pred <- data[, !colnames(data) %in% c("thalach", "target")]
+
+cp_X <- data.matrix(pred)
+
+cp_y <- data$thalach
+
+ada_Varcounts = list()
+
+for (i in 1:100) {
+    
+    set.seed(NULL)
+    
+    set.seed(i)
+    
+    cv.adalasso <- cv.glmnet(cp_X, cp_y,
+    
+    lambda = lambda.seq,
+    
+    alpha = 1, 
+    
+    family = 'gaussian',
+    
+    penalty.factor = weight)
+
+    bestcoef = coef(cv.adalasso)[-1]
+    
+    bestcoef <- bestcoef[bestcoef != 0]
+    
+    ada_Varcounts[i] = length(bestcoef)
+}
+```
+
+```{r}
+
+ada_Varcounts = as.numeric(ada_Varcounts)
+summary(ada_Varcounts)
+```
