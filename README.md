@@ -1,7 +1,8 @@
 # Introduction
 This repository provides two R code in R-markdown format, designed to be run in the R-studio enviornment. The datasets is obtained from [Kaggle](https://www.kaggle.com/datasets/kingabzpro/heart-disease-patients/data).
 
-These models focus on utilizing machine learning techniques to optimize heart patient strategies based on individual characteristics. The main contributions are fulfilling the objective of grouping patients by their characteristics and using regularization methods to identify the key factors affecting patients' maximum heart rate within these groups. The selected factors assist in alleviating disease screening pressures, and the simplified predictions further reduce monitoring expenditures.
+These scripts leveraged multiple machine learning techniques to optimize treatment strategies for heart patients based on individual characteristics. Clustering and discriminant analysis are used to group patients by their characteristics. Cross-validation helps train the model and ensures that the regularization methods (Lasso, Adaptive Lasso) successfully identify factors affecting maximum heart rate. These selected factors contribute to establishing an optimal heart disease monitoring model, which reduces disease screening pressures and lowers monitoring costs for specific patient groups.
+
 
 # Remarks
 - Considering data ethics and privacy, patient information has been anonymized.
